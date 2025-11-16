@@ -1,24 +1,116 @@
 ﻿<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>OCM Home</title>
-<script src="app-config.js"></script>
-</head><body>
-<h1>OCM Listings</h1>
-<input id="q" placeholder="Search item"><button onclick="load()">Search</button>
-<ul id="list"></ul>
-<script>
-function load(){
-  const q=document.getElementById('q').value.trim();
-  fetch(`${WEB_APP_URL}?action=listings&q=${encodeURIComponent(q)}`)
-    .then(r=>r.json()).then(j=>{
-      if(!j.ok) throw new Error(j.error);
-      const ul=document.getElementById('list'); ul.innerHTML='';
-      j.data.forEach(l=>{
-        const li=document.createElement('li');
-        li.textContent=`${l.itemName} | ${l.type} | ${l.unit} | price:${l.priceBT} | qty:${l.qtyAvailable||'∞'} | ${l.playerName}`;
-        ul.appendChild(li);
-      });
-    }).catch(e=>alert(e.message));
-}
-load();
-</script>
-</body></html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>OCM Home</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <script src="app-config.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            max-width: 1100px;
+            margin: auto;
+        }
+
+        #topBar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 48px;
+            background: #222;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            z-index: 1000;
+            font-size: 14px;
+        }
+
+            #topBar a, #topBar button {
+                color: #fff;
+                text-decoration: none;
+                margin-right: 18px;
+                background: none;
+                border: none;
+                cursor: pointer;
+            }
+
+            #topBar .right {
+                margin-left: auto;
+                display: flex;
+                gap: 12px;
+            }
+
+        body.withTopBar {
+            padding-top: 70px;
+        }
+
+        ul {
+            padding-left: 18px;
+        }
+    </style>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+    <div id="topBar">
+        <div><strong>Vak Store</strong></div>
+        <a href="index.html">Vak Store</a>
+        <a href="AccountHistory.html">Account History</a>
+        <a href="OCMHome.html">OCM</a>
+        <a href="OCMUser.html">OCM Merchant</a>
+        <a id="adminLink" href="Admin.html" style="display:none;">Admin Panel</a>
+        <div class="right">
+            <span id="topUser" style="font-size:12px; color:#ddd;"></span>
+            <button onclick="logout()">Logout</button>
+        </div>
+    </div>
+
+    <h1>OCM Listings</h1>
+    <input id="q" placeholder="Search item">
+    <button onclick="load()">Search</button>
+    <ul id="list"></ul>
+
+    <script>
+        let googleIdToken = null; let isAdmin = false; let currentUser = null;
+
+        // Optional sign-in to show Admin link; not required for listing fetch
+        window.onload = () => {
+            document.body.classList.add('withTopBar');
+            if (window.google && google.accounts && google.accounts.id) {
+                google.accounts.id.initialize({ client_id: OAUTH_CLIENT_ID, callback: onGoogleSignIn, ux_mode: 'popup' });
+                google.accounts.id.prompt();
+            }
+            load();
+        };
+        function onGoogleSignIn(resp) {
+            googleIdToken = resp && resp.credential;
+            if (!googleIdToken) return;
+            fetch(`${WEB_APP_URL}?action=me&idToken=${encodeURIComponent(googleIdToken)}`)
+                .then(r => r.json()).then(j => {
+                    if (j.ok) {
+                        currentUser = j.data.user || null; isAdmin = !!j.data.isAdmin;
+                        document.getElementById('adminLink').style.display = isAdmin ? 'inline' : 'none';
+                        document.getElementById('topUser').textContent = currentUser?.email || '';
+                    }
+                });
+        }
+        function logout() { googleIdToken = null; currentUser = null; isAdmin = false; document.getElementById('adminLink').style.display = 'none'; document.getElementById('topUser').textContent = ''; }
+
+        function load() {
+            const q = document.getElementById('q').value.trim();
+            fetch(`${WEB_APP_URL}?action=listings&q=${encodeURIComponent(q)}`)
+                .then(r => r.json()).then(j => {
+                    if (!j.ok) throw new Error(j.error);
+                    const ul = document.getElementById('list'); ul.innerHTML = '';
+                    j.data.forEach(l => {
+                        const li = document.createElement('li');
+                        li.textContent = `${l.itemName} | ${l.type} | ${l.unit} | price:${l.priceBT} | qty:${l.qtyAvailable || '∞'} | ${l.playerName}`;
+                        ul.appendChild(li);
+                    });
+                }).catch(e => alert(e.message));
+        }
+    </script>
+</body>
+</html>

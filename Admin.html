@@ -1,57 +1,349 @@
 <!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>Admin Dashboard</title>
-<script src="app-config.js"></script>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
-</head><body>
-<h1>Admin Pending Requests</h1>
-<div id="loginStatus"></div>
-<ul id="pendingList"></ul>
-<script>
-let googleIdToken=null;
-function onGoogleSignIn(r){
-  googleIdToken=r.credential;
-  loadPending();
-}
-function loadPending(){
-  fetch(`${WEB_APP_URL}?action=pending&idToken=${encodeURIComponent(googleIdToken)}`)
-    .then(r=>r.json()).then(j=>{
-      if(!j.ok) throw new Error(j.error);
-      const ul=document.getElementById('pendingList'); ul.innerHTML='';
-      j.data.forEach(p=>{
-        const li=document.createElement('li');
-        li.textContent=`${p.requestId} | ${p.playerName} | ${p.status}`;
-        const appr=document.createElement('button'); appr.textContent='Approve'; appr.onclick=()=>approve(p.requestId,false);
-        const apprAdmin=document.createElement('button'); apprAdmin.textContent='Approve (Admin Sale)'; apprAdmin.onclick=()=>approve(p.requestId,true);
-        const rej=document.createElement('button'); rej.textContent='Reject'; rej.onclick=()=>rejectReq(p.requestId);
-        li.appendChild(appr); li.appendChild(apprAdmin); li.appendChild(rej);
-        ul.appendChild(li);
-      });
-    }).catch(e=> document.getElementById('loginStatus').textContent='Error: '+e.message);
-}
-function recaptchaWrap(){ return new Promise((res,rej)=>{ grecaptcha.ready(()=>grecaptcha.execute(RECAPTCHA_SITE_KEY,{action:'submit'}).then(res).catch(rej)); }); }
-function approve(requestId,executedByAdmin){
-  recaptchaWrap().then(token=>{
-    return fetch(WEB_APP_URL,{method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ action:'approveRequest', idToken:googleIdToken, recaptchaToken:token, payload:{requestId, executedByAdmin} })
-    });
-  }).then(r=>r.json()).then(j=>{
-    if(!j.ok) throw new Error(j.error);
-    alert('Approved: net='+j.result.netBT+' fee='+j.result.feeBT);
-    loadPending();
-  }).catch(e=> alert(e.message));
-}
-function rejectReq(requestId){
-  recaptchaWrap().then(token=>{
-    return fetch(WEB_APP_URL,{method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ action:'rejectRequest', idToken:googleIdToken, recaptchaToken:token, payload:{requestId, note:'Rejected by admin'} })
-    });
-  }).then(r=>r.json()).then(j=>{
-    if(!j.ok) throw new Error(j.error);
-    alert('Rejected'); loadPending();
-  }).catch(e=> alert(e.message));
-}
-</script>
-<div id="g_id_onload" data-client_id="1052887487165-endmh7ktojtd2eehnjt2bf3shcd4abf4.apps.googleusercontent.com" data-callback="onGoogleSignIn"></div>
-<div class="g_id_signin" data-type="standard"></div>
-<script src="https://www.google.com/recaptcha/api.js?render=6LdjcAgsAAAAABWoHl5dmFjbJQL61kOu7ddvkUZF"></script>
-</body></html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Admin Panel</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <script src="app-config.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            max-width: 1100px;
+            margin: auto;
+        }
+
+        #topBar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 48px;
+            background: #222;
+            color: #fff;
+            display: none;
+            align-items: center;
+            padding: 0 20px;
+            z-index: 1000;
+            font-size: 14px;
+        }
+
+            #topBar a, #topBar button {
+                color: #fff;
+                text-decoration: none;
+                margin-right: 18px;
+                background: none;
+                border: none;
+                cursor: pointer;
+            }
+
+            #topBar .right {
+                margin-left: auto;
+                display: flex;
+                gap: 12px;
+            }
+
+        body.withTopBar {
+            padding-top: 70px;
+        }
+
+        .small {
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        .request {
+            margin: 8px 0;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        .controls {
+            margin-top: 6px;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .details {
+            margin-top: 8px;
+            padding: 8px;
+            background: #f9f9f9;
+            border-radius: 4px;
+            display: none;
+        }
+
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+            .items-table th, .items-table td {
+                border: 1px solid #ddd;
+                padding: 4px;
+                text-align: left;
+            }
+
+        .toolbar {
+            margin: 10px 0;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .tag {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12px;
+            background: #eee;
+            margin-left: 8px;
+        }
+    </style>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://www.google.com/recaptcha/api.js?render=6LdjcAgsAAAAABWoHl5dmFjbJQL61kOu7ddvkUZF"></script>
+</head>
+<body>
+    <div id="topBar">
+        <div><strong>Vak Store</strong></div>
+        <a href="index.html">Vak Store</a>
+        <a href="AccountHistory.html">Account History</a>
+        <a href="OCMHome.html">OCM</a>
+        <a href="OCMUser.html">OCM Merchant</a>
+        <a id="adminLink" href="Admin.html" style="display:none;">Admin Panel</a>
+        <div class="right">
+            <span id="topUser" class="small"></span>
+            <button onclick="logout()">Logout</button>
+        </div>
+    </div>
+
+    <h1>Admin Pending Requests</h1>
+    <div id="loginStatus" class="small">Not signed in</div>
+
+    <div id="adminGuard" class="small" style="color:#a00; display:none;">You are not an admin.</div>
+
+    <div id="adminContent" class="hidden">
+        <div class="toolbar">
+            <label>Filter player/mailbox: <input id="filterPlayer" placeholder="player or mailbox" /></label>
+            <button id="btnRefresh">Refresh</button>
+        </div>
+        <ul id="pendingList"></ul>
+    </div>
+
+    <script>
+        let googleIdToken = null;
+        let isAdmin = false;
+        let currentUser = null;
+
+        // Nav helpers
+        function showTopBar() {
+            document.getElementById('topBar').style.display = 'flex';
+            document.body.classList.add('withTopBar');
+            document.getElementById('adminLink').style.display = isAdmin ? 'inline' : 'none';
+            const topUser = document.getElementById('topUser');
+            if (topUser && currentUser) topUser.textContent = currentUser.email || '';
+        }
+        function logout() {
+            googleIdToken = null; currentUser = null; isAdmin = false;
+            document.getElementById('topBar').style.display = 'none';
+            document.body.classList.remove('withTopBar');
+            document.getElementById('adminContent').classList.add('hidden');
+            document.getElementById('loginStatus').textContent = 'Logged out.';
+        }
+
+        // GSI init
+        window.onload = () => {
+            // If used standalone, render a button to let user sign in if needed
+            if (window.google && google.accounts && google.accounts.id) {
+                google.accounts.id.initialize({ client_id: OAUTH_CLIENT_ID, callback: onGoogleSignIn, ux_mode: 'popup' });
+                google.accounts.id.prompt(); // One-tap or browser UI
+            } else {
+                // Fallback: wait and then prompt later
+                const iv = setInterval(() => {
+                    if (window.google && google.accounts && google.accounts.id) {
+                        clearInterval(iv);
+                        google.accounts.id.initialize({ client_id: OAUTH_CLIENT_ID, callback: onGoogleSignIn, ux_mode: 'popup' });
+                        google.accounts.id.prompt();
+                    }
+                }, 250);
+                setTimeout(() => clearInterval(iv), 4000);
+            }
+
+            document.getElementById('btnRefresh').addEventListener('click', loadPending);
+            document.getElementById('filterPlayer').addEventListener('input', debounce(loadPending, 300));
+        };
+
+        async function onGoogleSignIn(resp) {
+            const statusEl = document.getElementById('loginStatus');
+            googleIdToken = resp && resp.credential;
+            if (!googleIdToken) { statusEl.textContent = 'Login error: no credential'; return; }
+            statusEl.textContent = 'Verifying token...';
+            try {
+                const ti = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(googleIdToken)}`);
+                if (!ti.ok) throw new Error('tokeninfo failed ' + ti.status);
+                const info = await ti.json();
+                if (info.aud !== OAUTH_CLIENT_ID) throw new Error('Invalid audience');
+
+                const meR = await fetch(`${WEB_APP_URL}?action=me&idToken=${encodeURIComponent(googleIdToken)}`);
+                const meJ = await meR.json();
+                if (!meJ.ok) throw new Error(meJ.error || '/me failed');
+                currentUser = meJ.data.user || null;
+                isAdmin = !!meJ.data.isAdmin;
+
+                showTopBar();
+                if (!isAdmin) {
+                    document.getElementById('adminGuard').style.display = 'block';
+                    document.getElementById('adminContent').classList.add('hidden');
+                    statusEl.textContent = 'Logged in (not admin).';
+                    return;
+                }
+                document.getElementById('adminGuard').style.display = 'none';
+                document.getElementById('adminContent').classList.remove('hidden');
+                statusEl.textContent = 'Logged in as admin.';
+                loadPending();
+            } catch (e) {
+                statusEl.textContent = 'Login error: ' + e.message;
+            }
+        }
+
+        function debounce(fn, ms) {
+            let t = null;
+            return function () { clearTimeout(t); t = setTimeout(() => fn(), ms); }
+        }
+
+        function escapeHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+        function recaptchaWrap() {
+            return grecaptcha.execute(RECAPTCHA_SITE_KEY, { action: 'submit' });
+        }
+
+        function loadPending() {
+            if (!googleIdToken || !isAdmin) return;
+            const filter = encodeURIComponent(document.getElementById('filterPlayer').value || '');
+            fetch(`${WEB_APP_URL}?action=pending&idToken=${encodeURIComponent(googleIdToken)}&filter=${filter}`)
+                .then(r => r.json())
+                .then(j => {
+                    if (!j.ok) throw new Error(j.error || 'Failed to load');
+                    const ul = document.getElementById('pendingList'); ul.innerHTML = '';
+                    if (!j.data || !j.data.length) { ul.innerHTML = '<li class="small">No pending requests</li>'; return; }
+                    j.data.forEach(p => ul.appendChild(renderRequest(p)));
+                })
+                .catch(e => document.getElementById('loginStatus').textContent = 'Error: ' + e.message);
+        }
+
+        function renderRequest(p) {
+            const li = document.createElement('li'); li.className = 'request';
+            const header = document.createElement('div');
+            header.innerHTML = `<strong>${escapeHtml(p.playerName || 'Unknown')}</strong> <span class="small">| Request: ${escapeHtml(p.requestId)} | Status: ${escapeHtml(p.status)}</span>`;
+            li.appendChild(header);
+
+            const controls = document.createElement('div'); controls.className = 'controls';
+            const viewBtn = document.createElement('button'); viewBtn.textContent = 'Toggle Details';
+            const loadBtn = document.createElement('button'); loadBtn.textContent = 'Load Details';
+            const appr = document.createElement('button'); appr.textContent = 'Approve'; appr.onclick = () => approve(p.requestId, false);
+            const apprAdmin = document.createElement('button'); apprAdmin.textContent = 'Approve (Admin Sale)'; apprAdmin.onclick = () => approve(p.requestId, true);
+            const rej = document.createElement('button'); rej.textContent = 'Reject'; rej.onclick = () => rejectReq(p.requestId);
+            controls.append(viewBtn, loadBtn, appr, apprAdmin, rej);
+            li.appendChild(controls);
+
+            const details = document.createElement('div'); details.className = 'details';
+            li.appendChild(details);
+
+            if (p.mailboxNumber || (p.items && p.items.length)) {
+                populateDetails(details, p);
+                details.style.display = 'block';
+            }
+
+            viewBtn.addEventListener('click', () => {
+                details.style.display = details.style.display === 'none' ? 'block' : 'none';
+            });
+            loadBtn.addEventListener('click', async () => {
+                loadBtn.disabled = true;
+                try {
+                    await loadRequestDetails(p.requestId, details);
+                } finally { loadBtn.disabled = false; }
+            });
+
+            return li;
+        }
+
+        function populateDetails(detailsDiv, p) {
+            detailsDiv.innerHTML = '';
+            const mb = document.createElement('div');
+            mb.innerHTML = `<div class="small"><strong>Mailbox:</strong> ${escapeHtml(p.mailboxNumber || 'N/A')}</div>`;
+            detailsDiv.appendChild(mb);
+
+            const items = p.items || [];
+            if (items.length) {
+                const table = document.createElement('table'); table.className = 'items-table';
+                table.innerHTML = `<thead><tr><th>Side</th><th>Item</th><th>Qty</th><th>Price</th></tr></thead>`;
+                const tbody = document.createElement('tbody');
+                items.forEach(it => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `<td>${escapeHtml(it.side || '')}</td><td>${escapeHtml(it.itemName || '')}</td><td>${escapeHtml(String(it.quantity || ''))}</td><td>${escapeHtml(String(it.price || ''))}</td>`;
+                    tbody.appendChild(tr);
+                });
+                table.appendChild(tbody);
+                detailsDiv.appendChild(table);
+            } else {
+                const none = document.createElement('div'); none.className = 'small'; none.textContent = 'No item details available';
+                detailsDiv.appendChild(none);
+            }
+
+            if (p.notes) {
+                const notes = document.createElement('div'); notes.className = 'small'; notes.textContent = 'Notes: ' + p.notes;
+                detailsDiv.appendChild(notes);
+            }
+        }
+
+        function loadRequestDetails(requestId, detailsDiv) {
+            if (!googleIdToken) return Promise.reject(new Error('Not signed in'));
+            detailsDiv.innerHTML = 'Loading...';
+            return fetch(`${WEB_APP_URL}?action=requestDetails&requestId=${encodeURIComponent(requestId)}&idToken=${encodeURIComponent(googleIdToken)}`)
+                .then(r => r.json())
+                .then(j => {
+                    if (!j.ok) throw new Error(j.error || 'Failed to load details');
+                    populateDetails(detailsDiv, j.data);
+                    // extra tags
+                    const tag = document.createElement('div'); tag.className = 'small';
+                    tag.innerHTML = `<span class="tag">Balance: ${Number(j.data.userBalanceBT || 0).toFixed(2)} BT</span>`;
+                    detailsDiv.appendChild(tag);
+                })
+                .catch(e => {
+                    detailsDiv.innerHTML = '<div class="small">Error loading details: ' + e.message + '</div>';
+                    throw e;
+                });
+        }
+
+        function approve(requestId, executedByAdmin) {
+            recaptchaWrap().catch(() => null).then(token => {
+                return fetch(WEB_APP_URL, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'approveRequest', idToken: googleIdToken, recaptchaToken: token || null, payload: { requestId, executedByAdmin } })
+                });
+            }).then(r => r.json()).then(j => {
+                if (!j.ok) throw new Error(j.error);
+                alert('Approved: net=' + j.result.netBT + ' fee=' + j.result.feeBT);
+                loadPending();
+            }).catch(e => alert(e.message));
+        }
+
+        function rejectReq(requestId) {
+            recaptchaWrap().catch(() => null).then(token => {
+                return fetch(WEB_APP_URL, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'rejectRequest', idToken: googleIdToken, recaptchaToken: token || null, payload: { requestId, note: 'Rejected by admin' } })
+                });
+            }).then(r => r.json()).then(j => {
+                if (!j.ok) throw new Error(j.error);
+                alert('Rejected'); loadPending();
+            }).catch(e => alert(e.message));
+        }
+    </script>
+</body>
+</html>
